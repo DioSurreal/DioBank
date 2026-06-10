@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package diobank.ledger.v1;
+
+option java_multiple_files = true;
+option java_package = "com.diobank.ledger.grpc.v1";
+option java_outer_classname = "LedgerServiceProto";
+
+service LedgerService {
+}
+

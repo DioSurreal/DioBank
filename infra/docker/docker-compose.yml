@@ -1,0 +1,49 @@
+name: diobank-ledger-service
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ledger-postgres
+    environment:
+      POSTGRES_DB: ledgerdb
+      POSTGRES_USER: ledger
+      POSTGRES_PASSWORD: ledger
+    ports:
+      - "5432:5432"
+    volumes:
+      - ledger-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ledger -d ledgerdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - diobank-ledger
+
+  ledger-service:
+    image: diobank/ledger-service:latest
+    build:
+      context: ../../services/ledger-service
+      dockerfile: Dockerfile
+    container_name: ledger-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ledgerdb
+      SPRING_DATASOURCE_USERNAME: ledger
+      SPRING_DATASOURCE_PASSWORD: ledger
+      LEDGER_GRPC_PORT: 9090
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - diobank-ledger
+
+volumes:
+  ledger-postgres-data:
+
+networks:
+  diobank-ledger:
+    name: diobank-ledger
