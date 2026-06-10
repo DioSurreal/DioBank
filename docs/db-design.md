@@ -73,16 +73,14 @@ money_transactions :
 		to_account_id : VARCHAR FK REFERENCES account(account_id) NOT NULL
 		status : VARCHAR NOT NULL
 		requested_at : TIMESTAMP NOT NULL
-		completed_at : TIMESTAMP NOT NULL
+		completed_at : TIMESTAMP 
 ledger_entries :
 		ledger_id :  VARCHAR PK (UUID)
 		transaction_id : VARCHAR FK (UUID) NOT NULL
-		account_id : VARCHAR FK NOT NULL
+		account_id : VARCHAR NOT NULL
 		direction VARCHAR NOT NULL CHECK (direction IN ('DEBIT', 'CREDIT'))
 		amount : BIGINT (long type in code keep as satang at frontend service) NOT NULL (not negative)
 		created_at : TIMESTAMP NOT NULL
-		cleared_at : TIMESTAMP NOT NULL
-		updated_at : TIMESTAMP NOT NULL
 outbox_events :
 		event_id :  VARCHAR PK (UUID)
 		aggregate_type : VARCHAR NOT NULL
