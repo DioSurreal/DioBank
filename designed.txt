@@ -1,0 +1,774 @@
+banking system
+clarification :
+(IB+MB)from https://app.bot.or.th/BTWS_STAT/statistics/ReportPage.aspx?reportID=949&language=eng
+(cheque) from https://app.bot.or.th/BTWS_STAT/statistics/BOTWEBSTAT.aspx?reportID=689&language=TH
+
+
+we will breakdown user support like:
+	metrics:
+		money transfer : 
+			Internet Banking(IB):
+				no of agreemants ≈ 40M
+				transactions per mounth ≈ 100M
+			Mobile Banking(MB) :
+				no of agreemants ≈ 150M
+				transactions per mounth ≈ 40B	
+			IB + MB : (100M + 40B) / (30*24*60*60) 
+				: ≈15,818 TPS > 20,000 TPS (avg)
+			for peek: x10 transactions ≈ 200,000 TPS
+		kyc images 	 :
+			no of image  IB + MB or 40M + 150M ≈ 190M images
+			size of storage  190M * 3 * 50kB ≈ 28.5 TB *3(As a precaution) ≈	86TB
+		Cheque : 
+			transactions per mounth ≈ 200,000 transaction/mounth
+		Loan	:
+			transactions per mounth ≈ 200,000 transaction/mounth
+
+	componect user journey:
+		
+		money transfer :
+			(app,web) -> API gateway(auth,jwt) -> check balance(Spring Boot +Kafka Streams + RocksDB ) ->(Kafka partition) -> double ledger entry(kafka topic)
+		kyc (first open account) :
+			(app,counter) -> fill identified data -> camera shot (portatait,front identify card, back identify card) -> Upload Image ──► [ Object Storage (S3/MinIO) ]
+                                                															│
+                                      															(Returns Image URL String)
+                                               																 │
+                                      															                 ▼
+														[User Service] ───────────────────────► Save URL to UserDB
+
+		cheque service:
+			cheque transactions -> validate cheque -> clearing cheque(batch processing)
+		loan service :
+			loan transactions -> fraud service -> loan approved -> calculate loan model (installment per mounth) -> loan contract
+	high level design :
+		
+		user service :
+			Service Communication Layer : 
+						gRPC :   insert_user_data : protobuf(user_data) -> user_id	
+						         get_uder_data -> user_id -> protobuf(user_data)
+						         update_user_data user_id,field -> user_id 
+		ledger service : 
+			Service Communication Layer :
+						kafka : Consumer insert_entry_double_ledger : 2 ledger entry -> ledger_id
+		account service :
+			Service Communication Layer :
+						gRPC :   insert_account_data : protobuf(account_data) -> account_id	
+						         get_uder_data -> account_id -> protobuf(account_data)
+						         update_account_data account_id,field -> account_id 							   
+		cheque service :
+			Service Communication Layer :
+						gRPC :  insert_cheque_transaction : cheque_data -> cheque_id
+						validate cheque : cheque_data -> VALIDATED_SUCCESS or INVALID_SIGNATURE/FORMAT (Rejected).
+						batch peocess : clearing house  -> ACCEPTED_FOR_CLEARING, not CLEARED
+		loan service :
+   			Service Communication Layer :
+        				gRPC : CreateLoanTransaction : protobuf(loan_data) -> loan_id    
+               				   GetLoanTransaction    : loan_id -> protobuf(loan_data)
+               				   GetLoanApprovalStatus : loan_id -> status(APPROVED, REJECTED, or PENDING_REVIEW)
+        				Internal Engine : 
+               				   Loan Calculator Core  : Calculates installment, fee, interest, policy maturity dates, etc.
+		BFF :
+			separate for communicate with each service like :
+					Mobile-Banking-BFF , Web-Banking-BFF , cheque BFF , loan BFF 
+
+
+๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒๒
+DB design V3
+
+customer :
+		customer_id : BIGSERIAL PK
+		name : VARCHAR  NOT NULL
+		surname : VARCHAR NOT NULL
+		status : VARCHAR NOT NULL
+		address : VARCHAR NOT NULL
+		phone_number : VARCHAR NOT NULL
+		birth_date : TIMESTAMP
+		front_national_id_card_img_url : VARCHAR NOT NULL
+		back_national_id_card_img_url : VARCHAR NOT NULL
+		protrait_customer_url : VARCHAR NOT NULL
+		created_at TIMESTAMP NOT NULL
+		updated_at TIMESTAMP NOT NULL
+customer_log_history :
+		customer_log_id : BIGSERIAL PK
+		customer_id : BIGSERIAL FK
+		actor_type VARCHAR NOT NULL,( 'CUSTOMER', 'STAFF', 'SYSTEM')
+		channel : VARCHAR NOT NULL
+		details JSONB NOT NULL
+		created_at TIMESTAMP NOT NULL
+kyc :
+		kyc_id : BIGSERIAL PK
+		customer_id : BIGSERIAL FK NOT NULL
+		identification_no : VARCHAR UNIQUE NOT NULL
+		email : VARCHAR UNIQUE NOT NULL
+		password_hash : VARCHAR(256)
+		last_login : TIMESTAMP NOT NULL
+		created_at : TIMESTAMP NOT NULL
+		updated_at : TIMESTAMP NOT NULL
+kyc_log_history :
+		kyc_log_id : BIGSERIAL PK
+		kyc_id : BIGSERIAL FK
+		actor_type VARCHAR NOT NULL,( 'CUSTOMER', 'STAFF', 'SYSTEM')
+		channel : VARCHAR NOT NULL
+		details JSONB NOT NULL
+		created_at TIMESTAMP NOT NULL
+account :
+		account_id : VARCHAR PK (UUID)
+		customer_id : BIGSERIAL FK NOT NULL
+		account_number : VARCHAR NOT NULL
+		account_name : VARCHAR NOT NULL
+		balance : BIGINT (long type in code keep as satang at frontend service) NOT NULL
+		status : VARCHAR NOT NULL
+		created_at : TIMESTAMP NOT NULL
+		updated_at : TIMESTAMP NOT NULL
+account_log_history : # i will detect for never change balance by any way 
+		account_log_id : BIGSERIAL PK
+		account_id : VARCHAR FK
+		actor_type VARCHAR NOT NULL,( 'CUSTOMER', 'STAFF', 'SYSTEM')
+		channel : VARCHAR NOT NULL
+		details JSONB NOT NULL
+		created_at TIMESTAMP NOT NULL
+money_transactions :
+		transaction_id : VARCHAR PK (UUID)
+		idempotency_key : VARCHAR UNIQUE NOT NULL
+		transaction_type : VARCHAR NOT NULL
+		channel : VARCHAR NOT NULL
+		amount : BIGINT (long type in code keep as satang at frontend service) NOT NULL
+		sender_bank_code : VARCHAR NOT NULL
+		receiver_bank_code : VARCHAR NOT NULL
+		from_account_id : VARCHAR FK REFERENCES account(account_id) NOT NULL
+		to_account_id : VARCHAR FK REFERENCES account(account_id) NOT NULL
+		status : VARCHAR NOT NULL
+		requested_at : TIMESTAMP NOT NULL
+		completed_at : TIMESTAMP NOT NULL
+ledger_entries :
+		ledger_id :  VARCHAR PK (UUID)
+		transaction_id : VARCHAR FK (UUID) NOT NULL
+		account_id : VARCHAR FK NOT NULL
+		direction VARCHAR NOT NULL CHECK (direction IN ('DEBIT', 'CREDIT'))
+		amount : BIGINT (long type in code keep as satang at frontend service) NOT NULL (not negative)
+		created_at : TIMESTAMP NOT NULL
+		cleared_at : TIMESTAMP NOT NULL
+		updated_at : TIMESTAMP NOT NULL
+clearing_ledger_batch_jobs :
+		ledger_job_id : BIGSERIAL PK
+		clearing_type : VARCHAR NOT NULL
+		status : VARCHAR NOT NULL
+		cleared_at : TIMESTAMP NOT NULL
+		updated_at : TIMESTAMP NOT NULL
+cheque_transactions :
+		cheque_id : BIGSERIAL PK
+		cheque_number : VARCHAR NOT NULL
+		drawer_account : VARCHAR NOT NULL
+		paying_bank_code :  VARCHAR NOT NULL
+		payee_account :  VARCHAR NOT NULL
+		sending_Bank_code :  VARCHAR NOT NULL
+		amount : BIGINT (long type in code keep as satang at frontend service) NOT NULL (not negative)
+		status : VARCHAR NOT NULL('RECEIVED','PENDING_CLEARING','CLEARED','RETURNED','SETTLED','CANCELLED')
+		received_at : TIMESTAMP NOT NULL
+		cleared_at : TIMESTAMP NOT NULL
+		updated_at : TIMESTAMP NOT NULL
+clearing_cheque_batch_jobs :
+		cheque_job_id : BIGSERIAL PK
+		clearing_type : VARCHAR NOT NULL
+		status : VARCHAR NOT NULL
+		created_at : TIMESTAMP NOT NULL
+		updated_at : TIMESTAMP NOT NULL
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+ขั้นตอนการทำ transfer หรือ ถอนเงินเบื้องต้น
+
+เออ ถ้ามึงจะเอาแนวนี้ กูว่าเริ่มเข้าใกล้ Core Banking ที่ใช้งานจริงแล้วนะ
+
+กูจะไล่ Process แบบละเอียดให้เลย
+
+---
+
+# Phase 1 (Version ที่กูว่าดีสำหรับ Portfolio)
+
+## Components
+
+```text
+Mobile App
+
+↓
+
+BFF
+
+↓
+
+Transaction Service
+
+↓
+
+Ledger Service
+
+↓
+
+PostgreSQL
+
+--------------------
+
+Outbox Publisher
+
+↓
+
+Kafka
+
+↓
+
+Projection Service
+
+↓
+
+RocksDB
+
+↓
+
+Redis
+```
+
+---
+
+# กรณีโอนเงิน
+
+สมมุติ
+
+```text
+A = 1000
+
+B = 500
+
+โอน 300
+```
+
+---
+
+## Step 1
+
+User กดโอน
+
+```json
+{
+  "from_account":"A",
+  "to_account":"B",
+  "amount":300
+}
+```
+
+ส่งไป
+
+```text
+Mobile App
+ ↓
+BFF
+ ↓
+Transaction Service
+```
+
+---
+
+## Step 2
+
+Transaction Service
+
+ตรวจสอบ
+
+```text
+JWT
+Rate Limit
+Idempotency Key
+```
+
+---
+
+## Step 3
+
+Transaction Service
+
+อ่านยอดจาก
+
+```text
+Redis
+
+หรือ
+
+RocksDB
+```
+
+ได้
+
+```text
+1000
+```
+
+---
+
+เช็ค
+
+```text
+1000 >= 300
+```
+
+ผ่าน
+
+---
+
+## Step 4
+
+Transaction Service
+
+สร้าง
+
+```text
+Transfer Command
+```
+
+แล้วเรียก
+
+```text
+gRPC
+
+↓
+
+Ledger Service
+```
+
+---
+
+# จุดสำคัญที่สุด
+
+ตอนนี้
+
+```text
+ยังไม่มีเงินถูกหัก
+```
+
+---
+
+# Step 5
+
+Ledger Service
+
+เปิด Transaction
+
+```sql
+BEGIN;
+```
+
+---
+
+สร้าง
+
+```text
+transaction_id
+```
+
+---
+
+Insert
+
+```sql
+money_transactions
+```
+
+---
+
+Insert
+
+```sql
+ledger_entries
+
+Debit A 300
+```
+
+---
+
+Insert
+
+```sql
+ledger_entries
+
+Credit B 300
+```
+
+---
+
+Insert
+
+```sql
+outbox_events
+```
+
+---
+
+ทั้งหมดอยู่ใน
+
+```sql
+Transaction เดียว
+```
+
+---
+
+## Step 6
+
+Commit
+
+```sql
+COMMIT;
+```
+
+---
+
+ตรงนี้คือ
+
+```text
+Money Movement Success
+```
+
+แล้ว
+
+---
+
+## Step 7
+
+Ledger Service
+
+ส่งกลับ
+
+```json
+{
+  "transaction_id":"tx123",
+  "status":"SUCCESS",
+  "new_balance":700
+}
+```
+
+---
+
+Transaction Service
+
+↓
+
+BFF
+
+↓
+
+Mobile
+
+---
+
+User เห็น
+
+```text
+โอนสำเร็จ
+ยอดคงเหลือ 700 บาท
+```
+
+ทันที
+
+---
+
+# User จบตรงนี้
+
+User ไม่รู้เรื่อง
+
+```text
+Kafka
+Outbox
+Projection
+Redis
+```
+
+อีกแล้ว
+
+---
+
+# Background Processing
+
+หลังจากนั้น
+
+---
+
+## Step 8
+
+Outbox Publisher
+
+วิ่งทุก
+
+```text
+100ms
+```
+
+หรือ
+
+```text
+500ms
+```
+
+---
+
+หา
+
+```sql
+status = PENDING
+```
+
+---
+
+เจอ
+
+```text
+tx123
+```
+
+---
+
+ส่งเข้า Kafka
+
+```json
+{
+  "transaction_id":"tx123",
+  "from":"A",
+  "to":"B",
+  "amount":300
+}
+```
+
+---
+
+ส่งสำเร็จ
+
+---
+
+Update
+
+```sql
+status = PUBLISHED
+```
+
+---
+
+# Step 9
+
+Projection Consumer
+
+อ่าน Kafka
+
+---
+
+เจอ
+
+```text
+tx123
+```
+
+---
+
+Update
+
+```text
+A = 700
+
+B = 800
+```
+
+ใน
+
+```text
+RocksDB
+```
+
+---
+
+# Step 10
+
+Cache Consumer
+
+อ่าน Event เดียวกัน
+
+---
+
+Update
+
+```text
+Redis
+```
+
+---
+
+เสร็จ
+
+---
+
+# ถ้า Kafka ตายล่ะ?
+
+นี่คือข้อดีของ Outbox
+
+---
+
+สมมุติ
+
+```sql
+COMMIT
+```
+
+สำเร็จแล้ว
+
+---
+
+แต่
+
+```text
+Kafka Down
+```
+
+---
+
+ตอนนี้
+
+```text
+ledger_entries
+มีแล้ว
+
+money_transactions
+มีแล้ว
+
+outbox
+มีแล้ว
+```
+
+---
+
+เงินไม่หาย
+
+---
+
+พอ Kafka กลับมา
+
+Publisher
+
+```text
+อ่าน outbox
+```
+
+ใหม่
+
+---
+
+ส่ง Event ซ้ำ
+
+---
+
+Projection ตามทัน
+
+---
+
+# แล้ว Double Spending ล่ะ?
+
+ตรงนี้คือจุดที่เรายังคุยกันไม่จบ
+
+---
+
+ถ้ามึงทำแค่
+
+```text
+Check Redis
+
+↓
+
+Insert Ledger
+```
+
+เฉยๆ
+
+---
+
+มันยังมีช่อง
+
+```text
+A = 1000
+
+Withdraw 800
+
+Withdraw 800
+```
+
+พร้อมกัน
+
+---
+
+ทั้งสอง Request อ่าน
+
+```text
+1000
+```
+
+พร้อมกันได้
+
+---
+
+ดังนั้น Phase ต่อไปที่มึงต้องออกแบบคือ
+
+```text
+Single Writer Per Account
+```
+
+หรือ
+
+```text
+Account Locking Strategy
+```
+
+---
+
+เพราะ Process ที่กูอธิบายทั้งหมดข้างบน
+
+```text
+แก้เรื่อง Consistency
+Recovery
+Replay
+```
+
+แล้ว
+
+---
+
+แต่
+
+```text
+Concurrency
+```
+
+ยังต้องออกแบบเพิ่มอีกชั้น
+
+ซึ่งจริงๆ แล้วนี่คือ "หัวใจ" ของระบบโอนเงินทั้งระบบเลย ไม่ใช่ Kafka ไม่ใช่ Redis แต่เป็นการทำยังไงให้ Account A ถูกเขียนทีละ Transaction เท่านั้น 😎.
+
+step////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Phase 1
+
+Ledger Service
+
+✓ Transaction Recording
+✓ Double Entry
+✓ Idempotency
+✓ Outbox
+
+Phase 2
+
+Projection Service
+
+✓ Kafka Consumer
+✓ RocksDB
+✓ Balance Projection
+
+Phase 3
+
+Notification
+
+✓ Kafka Consumer
+✓ Push Notification
+
