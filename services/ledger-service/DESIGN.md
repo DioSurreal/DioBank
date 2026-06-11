@@ -2,11 +2,18 @@
 
 ## Service Purpose
 
-Ledger Service records immutable accounting events.
+Ledger Service is responsible for maintaining financial consistency.
 
-It acts as the financial journal of the platform.
+Ledger Service owns:
 
-Ledger Service is not responsible for balance calculation or transaction coordination.
+* Immutable ledger history
+* Operational account balances
+
+Ledger Service is the accounting source of truth.
+
+All financial operations must be recorded through double-entry accounting.
+
+Ledger Service guarantees that balance mutation and ledger persistence occur within the same database transaction.
 
 ---
 
@@ -23,6 +30,12 @@ Transaction Service sends:
 
 via gRPC.
 
+Transaction Service is responsible for:
+
+* Request validation
+* Workflow orchestration
+* Calling Ledger Service
+
 ---
 
 ### Outputs
@@ -31,6 +44,7 @@ Ledger Service persists:
 
 * Debit Ledger Entry
 * Credit Ledger Entry
+* Updated Account Balance
 
 inside PostgreSQL.
 
@@ -40,7 +54,7 @@ inside PostgreSQL.
 
 ### LedgerEntry
 
-Represents a single accounting entry.
+Represents a single immutable accounting entry.
 
 Fields:
 
@@ -52,6 +66,38 @@ Fields:
 * created_at
 
 ---
+
+### AccountBalance
+
+Represents operational balance state.
+
+Fields:
+
+* account_id
+* balance
+* updated_at
+
+Responsibilities:
+
+* Balance validation
+* Balance mutation
+
+---
+### Account Creation Flow
+
+Account Service owns account lifecycle.
+
+When a new account is created,
+Account Service must call Ledger Service
+CreateAccountBalance(account_id).
+
+Ledger Service creates:
+
+account_balance
+(
+    account_id,
+    balance = 0
+)
 
 ### DoubleEntry
 
@@ -92,103 +138,99 @@ Invalid postings must be rejected before persistence.
 
 ---
 
+## Balance Validation Rules
+
+Ledger Service owns balance validation.
+
+Before creating ledger entries:
+
+1. Lock debit account balance
+2. Verify sufficient funds
+3. Update balances
+4. Create ledger entries
+5. Commit transaction
+
+Insufficient balance must reject the operation.
+
+Ledger entries remain the accounting source of truth.
+
+account_balance is an operational balance cache
+used for transaction processing.
+
+Periodic reconciliation jobs must verify that:
+
+account_balance
+
+==
+
+SUM(ledger_entries)
+
+for every account.
+
+If divergence is detected,
+ledger_entries is authoritative.
+
+---
+
 ## Database Design
 
-Table:
-
-ledger_entries
+### ledger_entries
 
 Columns:
 
 * ledger_id UUID PRIMARY KEY
 * transaction_id UUID NOT NULL
-* account_id VARCHAR NOT NULL
+* account_id UUID NOT NULL
 * direction VARCHAR NOT NULL
 * amount BIGINT NOT NULL
 * created_at TIMESTAMP NOT NULL
 
 Notes:
 
-* transaction_id is not a foreign key
-* transaction_id is used only for traceability
-* ledger_entries is append-only
+* Immutable
+* Append-only
+* Never updated
+* Never deleted
+* transaction_id is used for traceability
 
+---
 
-account_balance
+### account_balance
 
 Columns:
 
-* account_id UUID PRIMARY KEY,
-* balance BIGINT NOT NULL,
+* account_id UUID PRIMARY KEY
+* balance BIGINT NOT NULL
 * updated_at TIMESTAMP NOT NULL
 
 Notes:
 
-* balance is greater than 0
-* permistic lock for update balance
-
-
----
-
-## Hexagonal Architecture
-
-### Domain Layer
-
-Contains:
-
-* LedgerEntry
-* DoubleEntry
-* Direction
-* Domain validation rules
-
-No framework dependencies allowed.
+* Stores operational balance
+* Used for transaction processing
+* Protected by pessimistic locking
+* Balance stored in satang
 
 ---
 
-### Application Layer
+## Concurrency Strategy
 
-Contains:
+Ledger Service owns concurrency control.
 
-* PostEntryUseCase
-* Command models
-* Port interfaces
+Balance updates must use:
 
-Responsibilities:
+SELECT ... FOR UPDATE
 
-* Receive command
-* Build DoubleEntry
-* Validate posting
-* Persist entries
+before mutation.
 
----
+Purpose:
 
-### Infrastructure Layer
+* Prevent double spending
+* Prevent lost updates
+* Serialize modifications per account
 
-Contains:
+Concurrency is enforced only on account balances.
 
-* PostgreSQL adapters
-* Repository implementations
-* gRPC adapters
-
-Responsibilities:
-
-* Database access
-* Transport protocols
-
----
-
-### Presentation Layer
-
-Contains:
-
-* gRPC endpoints
-
-Responsibilities:
-
-* Convert gRPC requests to application commands
-* Return application responses
-
-No business logic allowed.
+Ledger entries remain append-only and do not require locking.
 
 ---
 
@@ -206,14 +248,17 @@ Ledger Service
 
 ↓
 
-check balance
+Lock Debit Account
+
+(SELECT FOR UPDATE)
 
 ↓
-update balance
+
+Validate Balance
 
 ↓
 
-PostEntryUseCase
+Update Account Balances
 
 ↓
 
@@ -227,7 +272,13 @@ Validate Domain Rules
 
 Persist Debit Entry
 
+↓
+
 Persist Credit Entry
+
+↓
+
+Commit Database Transaction
 
 ↓
 
@@ -235,17 +286,96 @@ Return Success
 
 ---
 
+## Atomicity Guarantee
+
+The following operations must occur within a single PostgreSQL transaction:
+
+* Balance validation
+* Balance mutation
+* Debit ledger insert
+* Credit ledger insert
+
+Either all operations succeed or all operations fail.
+
+Partial success is not allowed.
+
+---
+
+## Ownership Boundaries
+
+### Ledger Service Owns
+
+* ledger_entries
+* account_balance
+* double-entry validation
+* balance validation
+* balance mutation
+* financial consistency
+
+### Transaction Service Owns
+
+* request orchestration
+* API workflow
+* transaction lifecycle
+* external coordination
+
+### Account Service Owns
+
+Account metadata only:
+
+* account_id
+* customer_id
+* account_status
+* account_type
+* account_name
+
+Account Service does not own balances.
+
+---
+
+## Accounting Rules
+
+Every successful transaction must create:
+
+* One DEBIT entry
+* One CREDIT entry
+
+Invariant:
+
+Total Debit = Total Credit
+
+Accounting balance must never be violated.
+
+---
+
+## Error Handling
+
+Reject when:
+
+* amount <= 0
+* insufficient funds
+* invalid account
+* malformed posting
+
+Database rollback must occur automatically.
+
+No ledger entry may exist without a successful balance mutation.
+
+No balance mutation may exist without corresponding ledger entries.
+
+---
+
 ## Explicit Non-Goals
 
 Ledger Service must never:
 
-* Check balances
-* Update balances
-* Lock accounts
-* Handle concurrency
-* Publish Kafka events
-* Update Redis
+* Manage customer profiles
+* Manage KYC
+* Manage account metadata
 * Send notifications
-* Coordinate workflows
+* Publish Kafka events
+* Manage Redis
+* Orchestrate workflows
+* Handle UI concerns
 
 These responsibilities belong to other services.

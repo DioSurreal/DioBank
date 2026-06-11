@@ -47,7 +47,7 @@ kyc_log_history :
 		created_at TIMESTAMP NOT NULL
 account :
 		account_id : VARCHAR PK (UUID)
-		customer_id : BIGSERIAL FK NOT NULL
+		customer_id : BIGSERIAL  NOT NULL
 		account_number : VARCHAR NOT NULL
 		account_name : VARCHAR NOT NULL
 		status : VARCHAR NOT NULL
@@ -68,22 +68,22 @@ money_transactions :
 		amount : BIGINT (long type in code keep as satang at frontend service) NOT NULL
 		sender_bank_code : VARCHAR NOT NULL
 		receiver_bank_code : VARCHAR NOT NULL
-		from_account_id : VARCHAR FK REFERENCES account(account_id) NOT NULL
-		to_account_id : VARCHAR FK REFERENCES account(account_id) NOT NULL
+		from_account_id : VARCHAR  NOT NULL
+		to_account_id : VARCHAR  NOT NULL
 		status : VARCHAR NOT NULL
 		requested_at : TIMESTAMP NOT NULL
 		completed_at : TIMESTAMP 
 ledger_entries :
 		ledger_id :  VARCHAR PK (UUID)
-		transaction_id : VARCHAR FK (UUID) NOT NULL
+		transaction_id : VARCHAR (UUID) NOT NULL
 		account_id : VARCHAR NOT NULL
 		direction VARCHAR NOT NULL CHECK (direction IN ('DEBIT', 'CREDIT'))
 		amount : BIGINT (long type in code keep as satang at frontend service) NOT NULL (not negative)
 		created_at : TIMESTAMP NOT NULL
 account_balance :
 		account_id UUID PRIMARY KEY,
-		balance BIGINT NOT NULL,
-		updated_at TIMESTAMP NOT NULL
+		balance BIGINT NOT NULL, # should be lockable for concurrency
+		updated_at TIMESTAMP NOT NULL		
 outbox_events :
 		event_id :  VARCHAR PK (UUID)
 		aggregate_type : VARCHAR NOT NULL
