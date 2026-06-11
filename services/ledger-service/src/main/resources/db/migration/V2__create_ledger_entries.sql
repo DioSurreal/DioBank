@@ -1,3 +1,4 @@
+-- V2__create_ledger_entries.sql
 CREATE TABLE ledger.ledger_entries (
     ledger_entry_id UUID PRIMARY KEY,
     transaction_id UUID NOT NULL,

@@ -50,7 +50,6 @@ account :
 		customer_id : BIGSERIAL FK NOT NULL
 		account_number : VARCHAR NOT NULL
 		account_name : VARCHAR NOT NULL
-		balance : BIGINT (long type in code keep as satang at frontend service) NOT NULL
 		status : VARCHAR NOT NULL
 		created_at : TIMESTAMP NOT NULL
 		updated_at : TIMESTAMP NOT NULL
@@ -81,6 +80,10 @@ ledger_entries :
 		direction VARCHAR NOT NULL CHECK (direction IN ('DEBIT', 'CREDIT'))
 		amount : BIGINT (long type in code keep as satang at frontend service) NOT NULL (not negative)
 		created_at : TIMESTAMP NOT NULL
+account_balance :
+		account_id UUID PRIMARY KEY,
+		balance BIGINT NOT NULL,
+		updated_at TIMESTAMP NOT NULL
 outbox_events :
 		event_id :  VARCHAR PK (UUID)
 		aggregate_type : VARCHAR NOT NULL

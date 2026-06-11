@@ -1,3 +1,5 @@
+-- V1__create_money_transactions.sql
+
 CREATE SCHEMA IF NOT EXISTS ledger;
 
 CREATE TABLE ledger.money_transactions (

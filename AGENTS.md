@@ -10,7 +10,6 @@ This repository is the home for DioBank's service-oriented backend, supporting l
 - Add or update documentation when behavior changes.
 
 ## Current Structure
-- `docs/` contains architecture and contract notes.
 - `services/` contains service-specific guidance.
 - `infra/` contains local development and platform assets.
 - `scripts/` contains helper scripts for local workflows.

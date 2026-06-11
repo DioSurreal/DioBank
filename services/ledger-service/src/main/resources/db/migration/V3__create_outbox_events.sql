@@ -1,3 +1,4 @@
+-- V3__create_outbox_events.sql
 CREATE TABLE ledger.outbox_events (
     event_id UUID PRIMARY KEY,
     aggregate_type VARCHAR(64) NOT NULL,
