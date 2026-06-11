@@ -7,5 +7,27 @@ option java_package = "com.diobank.ledger.grpc.v1";
 option java_outer_classname = "LedgerServiceProto";
 
 service LedgerService {
+  rpc PostTransaction (PostTransactionRequest) returns (PostTransactionResponse);
+  rpc CreateAccountBalance (CreateAccountBalanceRequest) returns (CreateAccountBalanceResponse);
 }
 
+message PostTransactionRequest {
+  string transaction_id = 1; // Idempotency key
+  string debit_account_id = 2;
+  string credit_account_id = 3;
+  int64 amount = 4; // Stored in satang (THB only)
+}
+
+message PostTransactionResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message CreateAccountBalanceRequest {
+  string account_id = 1;
+}
+
+message CreateAccountBalanceResponse {
+  bool success = 1;
+  string message = 2;
+}
