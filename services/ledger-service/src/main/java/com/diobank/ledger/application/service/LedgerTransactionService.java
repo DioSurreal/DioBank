@@ -1,0 +1,77 @@
+package com.diobank.ledger.application.service;
+
+import com.diobank.ledger.application.exception.AccountNotFoundException;
+import com.diobank.ledger.application.port.in.PostEntryUseCase;
+import com.diobank.ledger.application.port.in.command.PostEntryCommand;
+import com.diobank.ledger.application.port.in.result.PostEntryResult;
+import com.diobank.ledger.application.port.out.AccountBalancePort;
+import com.diobank.ledger.application.port.out.LedgerRepositoryPort;
+import com.diobank.ledger.domain.model.AccountBalance;
+import com.diobank.ledger.domain.model.Direction;
+import com.diobank.ledger.domain.model.DoubleEntry;
+import com.diobank.ledger.domain.model.LedgerEntry;
+import com.diobank.ledger.domain.model.Money;
+import com.diobank.ledger.domain.policy.PostingPolicy;
+
+import java.util.UUID;
+
+public class LedgerTransactionService implements PostEntryUseCase {
+
+    private final AccountBalancePort accountBalancePort;
+    private final LedgerRepositoryPort ledgerRepositoryPort;
+
+    public LedgerTransactionService(AccountBalancePort accountBalancePort, LedgerRepositoryPort ledgerRepositoryPort) {
+        this.accountBalancePort = accountBalancePort;
+        this.ledgerRepositoryPort = ledgerRepositoryPort;
+    }
+
+    @Override
+    public PostEntryResult postEntry(PostEntryCommand command) {
+        // 1. Check Idempotency via Read Port
+        if (ledgerRepositoryPort.existsByTransactionId(command.transactionId())) {
+            return new PostEntryResult(command.transactionId(), true);
+        }
+
+        // 2. Lock Ordering (Deadlock Prevention)
+        UUID firstLock = command.debitAccountId();
+        UUID secondLock = command.creditAccountId();
+        
+        if (firstLock.compareTo(secondLock) > 0) {
+            firstLock = command.creditAccountId();
+            secondLock = command.debitAccountId();
+        }
+
+        // 3. Acquire Locks using SELECT FOR UPDATE
+        AccountBalance firstAccount = accountBalancePort.loadForUpdate(firstLock)
+                .orElseThrow(() -> new AccountNotFoundException(firstLock));
+        AccountBalance secondAccount = accountBalancePort.loadForUpdate(secondLock)
+                .orElseThrow(() -> new AccountNotFoundException(secondLock));
+
+        AccountBalance debitAccount = firstLock.equals(command.debitAccountId()) ? firstAccount : secondAccount;
+        AccountBalance creditAccount = secondLock.equals(command.creditAccountId()) ? secondAccount : firstAccount;
+
+        // 4. Create Entries & Apply Posting Policy
+        Money amountToTransfer = Money.of(command.amount());
+        
+        LedgerEntry debitEntry = LedgerEntry.create(
+                command.transactionId(), debitAccount.getAccountId(), Direction.DEBIT, amountToTransfer);
+                
+        LedgerEntry creditEntry = LedgerEntry.create(
+                command.transactionId(), creditAccount.getAccountId(), Direction.CREDIT, amountToTransfer);
+                
+        DoubleEntry doubleEntry = new DoubleEntry(debitEntry, creditEntry);
+        
+        PostingPolicy.validate(doubleEntry);
+
+        // 5. Mutate Balances (Validates Sufficient Funds Internally)
+        debitAccount.deduct(amountToTransfer);
+        creditAccount.add(amountToTransfer);
+
+        // 6. Save State
+        accountBalancePort.save(debitAccount);
+        accountBalancePort.save(creditAccount);
+        ledgerRepositoryPort.saveDoubleEntry(doubleEntry);
+
+        return new PostEntryResult(command.transactionId(), false);
+    }
+}
