@@ -38,16 +38,33 @@ public class LedgerTransactionService implements PostEntryUseCase {
             throw new IllegalArgumentException("Transfer amount must be strictly greater than 0");
         }
 
-        // 2. Lock Ordering (Deadlock Prevention)
+        // 2. Create Entries & Apply Domain Policy (In Memory)
+        Money amountToTransfer = Money.of(command.amount());
+
+        LedgerEntry debitEntry = LedgerEntry.create(
+                command.transactionId(), command.debitAccountId(), Direction.DEBIT, amountToTransfer);
+
+        LedgerEntry creditEntry = LedgerEntry.create(
+                command.transactionId(), command.creditAccountId(), Direction.CREDIT, amountToTransfer);
+
+        DoubleEntry doubleEntry = new DoubleEntry(debitEntry, creditEntry);
+        PostingPolicy.validate(doubleEntry);
+
+        // 3. Database-driven Idempotency (ON CONFLICT DO NOTHING) - Shields Account Locks!
+        if (!ledgerRepositoryPort.saveDoubleEntryIfAbsent(doubleEntry)) {
+            return new PostEntryResult(command.transactionId(), true);
+        }
+
+        // 4. Lock Ordering (Deadlock Prevention)
         UUID firstLock = command.debitAccountId();
         UUID secondLock = command.creditAccountId();
-        
+
         if (firstLock.compareTo(secondLock) > 0) {
             firstLock = command.creditAccountId();
             secondLock = command.debitAccountId();
         }
 
-        // 3. Acquire Locks using SELECT FOR UPDATE
+        // 5. Acquire Locks using SELECT FOR UPDATE
         AccountBalance firstAccount = accountBalancePort.loadForUpdate(firstLock)
                 .orElseThrow(() -> new AccountNotFoundException(firstLock));
         AccountBalance secondAccount = accountBalancePort.loadForUpdate(secondLock)
@@ -55,25 +72,6 @@ public class LedgerTransactionService implements PostEntryUseCase {
 
         AccountBalance debitAccount = firstLock.equals(command.debitAccountId()) ? firstAccount : secondAccount;
         AccountBalance creditAccount = secondLock.equals(command.creditAccountId()) ? secondAccount : firstAccount;
-
-        // 4. Create Entries & Apply Domain Policy
-        Money amountToTransfer = Money.of(command.amount());
-        
-        LedgerEntry debitEntry = LedgerEntry.create(
-                command.transactionId(), debitAccount.getAccountId(), Direction.DEBIT, amountToTransfer);
-                
-        LedgerEntry creditEntry = LedgerEntry.create(
-                command.transactionId(), creditAccount.getAccountId(), Direction.CREDIT, amountToTransfer);
-                
-        DoubleEntry doubleEntry = new DoubleEntry(debitEntry, creditEntry);
-        
-        PostingPolicy.validate(doubleEntry); // Domain invariant check
-
-        // 5. Database-driven Idempotency (ON CONFLICT DO NOTHING)
-        // If false, it means transaction_id already exists. Return success early without mutating balance.
-        if (!ledgerRepositoryPort.saveDoubleEntryIfAbsent(doubleEntry)) {
-            return new PostEntryResult(command.transactionId(), true);
-        }
 
         // 6. Mutate Balances (Validates Sufficient Funds Internally)
         debitAccount.deduct(amountToTransfer);
