@@ -9,13 +9,14 @@ option java_outer_classname = "LedgerServiceProto";
 service LedgerService {
   rpc PostTransaction (PostTransactionRequest) returns (PostTransactionResponse);
   rpc CreateAccountBalance (CreateAccountBalanceRequest) returns (CreateAccountBalanceResponse);
+  rpc GetBalance (GetBalanceRequest) returns (GetBalanceResponse);
 }
 
 message PostTransactionRequest {
-  string transaction_id = 1; // Idempotency key
+  string transaction_id = 1;
   string debit_account_id = 2;
   string credit_account_id = 3;
-  int64 amount = 4; // Stored in satang (THB only)
+  int64 amount = 4;
 }
 
 message PostTransactionResponse {
@@ -30,4 +31,13 @@ message CreateAccountBalanceRequest {
 message CreateAccountBalanceResponse {
   bool success = 1;
   string message = 2;
+}
+
+message GetBalanceRequest {
+  string account_id = 1;
+}
+
+message GetBalanceResponse {
+  string account_id = 1;
+  int64 balance = 2;
 }
