@@ -5,6 +5,7 @@ import com.diobank.ledger.application.port.in.GetBalanceUseCase;
 import com.diobank.ledger.application.port.in.query.GetBalanceQuery;
 import com.diobank.ledger.application.port.in.result.AccountBalanceResult;
 import com.diobank.ledger.application.port.out.AccountBalancePort;
+import org.springframework.transaction.annotation.Transactional;
 
 public class AccountBalanceQueryService implements GetBalanceUseCase {
 
@@ -15,6 +16,7 @@ public class AccountBalanceQueryService implements GetBalanceUseCase {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public AccountBalanceResult getBalance(GetBalanceQuery query) {
         var account = accountBalancePort.load(query.accountId())
                 .orElseThrow(() -> new AccountNotFoundException(query.accountId()));

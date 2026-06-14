@@ -4,7 +4,7 @@ import com.diobank.ledger.application.port.in.CreateAccountBalanceUseCase;
 import com.diobank.ledger.application.port.in.command.CreateAccountBalanceCommand;
 import com.diobank.ledger.application.port.in.result.CreateAccountBalanceResult;
 import com.diobank.ledger.application.port.out.AccountBalancePort;
-import com.diobank.ledger.domain.model.AccountBalance;
+import org.springframework.transaction.annotation.Transactional;
 
 public class AccountBalanceCommandService implements CreateAccountBalanceUseCase {
 
@@ -15,17 +15,14 @@ public class AccountBalanceCommandService implements CreateAccountBalanceUseCase
     }
 
     @Override
+    @Transactional
     public CreateAccountBalanceResult createAccountBalance(CreateAccountBalanceCommand command) {
         var accountId = command.accountId();
         
-        var existing = accountBalancePort.load(accountId);
-        if (existing.isPresent()) {
-            return new CreateAccountBalanceResult(accountId, true);
-        }
+        // Database-driven idempotency: ON CONFLICT DO NOTHING
+        boolean created = accountBalancePort.createIfAbsent(accountId);
 
-        var newBalance = AccountBalance.createInitial(accountId);
-        accountBalancePort.save(newBalance);
-
-        return new CreateAccountBalanceResult(accountId, false);
+        // If created == true, it's a new account. If false, it already existed.
+        return new CreateAccountBalanceResult(accountId, !created);
     }
 }

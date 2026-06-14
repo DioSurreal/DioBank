@@ -7,5 +7,6 @@ import java.util.UUID;
 public interface AccountBalancePort {
     Optional<AccountBalance> load(UUID accountId);
     Optional<AccountBalance> loadForUpdate(UUID accountId);
-    void save(AccountBalance accountBalance);
+    void updateBalance(AccountBalance accountBalance);
+    boolean createIfAbsent(UUID accountId);
 }

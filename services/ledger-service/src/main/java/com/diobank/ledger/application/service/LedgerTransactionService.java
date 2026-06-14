@@ -12,6 +12,8 @@ import com.diobank.ledger.domain.model.DoubleEntry;
 import com.diobank.ledger.domain.model.LedgerEntry;
 import com.diobank.ledger.domain.model.Money;
 import com.diobank.ledger.domain.policy.PostingPolicy;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
@@ -26,10 +28,14 @@ public class LedgerTransactionService implements PostEntryUseCase {
     }
 
     @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public PostEntryResult postEntry(PostEntryCommand command) {
-        // 1. Check Idempotency via Read Port
-        if (ledgerRepositoryPort.existsByTransactionId(command.transactionId())) {
-            return new PostEntryResult(command.transactionId(), true);
+        // 1. Fail-Fast Validation (Before hitting DB)
+        if (command.debitAccountId().equals(command.creditAccountId())) {
+            throw new IllegalArgumentException("Self-transfers are not allowed.");
+        }
+        if (command.amount() <= 0) {
+            throw new IllegalArgumentException("Transfer amount must be strictly greater than 0");
         }
 
         // 2. Lock Ordering (Deadlock Prevention)
@@ -50,7 +56,7 @@ public class LedgerTransactionService implements PostEntryUseCase {
         AccountBalance debitAccount = firstLock.equals(command.debitAccountId()) ? firstAccount : secondAccount;
         AccountBalance creditAccount = secondLock.equals(command.creditAccountId()) ? secondAccount : firstAccount;
 
-        // 4. Create Entries & Apply Posting Policy
+        // 4. Create Entries & Apply Domain Policy
         Money amountToTransfer = Money.of(command.amount());
         
         LedgerEntry debitEntry = LedgerEntry.create(
@@ -61,16 +67,21 @@ public class LedgerTransactionService implements PostEntryUseCase {
                 
         DoubleEntry doubleEntry = new DoubleEntry(debitEntry, creditEntry);
         
-        PostingPolicy.validate(doubleEntry);
+        PostingPolicy.validate(doubleEntry); // Domain invariant check
 
-        // 5. Mutate Balances (Validates Sufficient Funds Internally)
+        // 5. Database-driven Idempotency (ON CONFLICT DO NOTHING)
+        // If false, it means transaction_id already exists. Return success early without mutating balance.
+        if (!ledgerRepositoryPort.saveDoubleEntryIfAbsent(doubleEntry)) {
+            return new PostEntryResult(command.transactionId(), true);
+        }
+
+        // 6. Mutate Balances (Validates Sufficient Funds Internally)
         debitAccount.deduct(amountToTransfer);
         creditAccount.add(amountToTransfer);
 
-        // 6. Save State
-        accountBalancePort.save(debitAccount);
-        accountBalancePort.save(creditAccount);
-        ledgerRepositoryPort.saveDoubleEntry(doubleEntry);
+        // 7. Save State
+        accountBalancePort.updateBalance(debitAccount);
+        accountBalancePort.updateBalance(creditAccount);
 
         return new PostEntryResult(command.transactionId(), false);
     }
