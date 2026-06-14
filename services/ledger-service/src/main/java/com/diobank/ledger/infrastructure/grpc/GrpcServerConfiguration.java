@@ -9,8 +9,10 @@ class GrpcServerConfiguration {
 
     @Bean
     @ConditionalOnProperty(prefix = "ledger.grpc.server", name = "enabled", havingValue = "true", matchIfMissing = true)
-    GrpcServerLifecycle grpcServerLifecycle(GrpcServerProperties properties) {
-        return new GrpcServerLifecycle(properties);
+    GrpcServerLifecycle grpcServerLifecycle(
+            GrpcServerProperties properties,
+            LedgerGrpcService ledgerGrpcService,
+            GlobalExceptionInterceptor globalExceptionInterceptor) {
+        return new GrpcServerLifecycle(properties, ledgerGrpcService, globalExceptionInterceptor);
     }
 }
-

@@ -5,6 +5,11 @@ import com.diobank.ledger.application.port.out.LedgerRepositoryPort;
 import com.diobank.ledger.application.service.AccountBalanceCommandService;
 import com.diobank.ledger.application.service.AccountBalanceQueryService;
 import com.diobank.ledger.application.service.LedgerTransactionService;
+import com.diobank.ledger.infrastructure.grpc.GlobalExceptionInterceptor;
+import com.diobank.ledger.infrastructure.grpc.LedgerGrpcService;
+import com.diobank.ledger.application.port.in.CreateAccountBalanceUseCase;
+import com.diobank.ledger.application.port.in.GetBalanceUseCase;
+import com.diobank.ledger.application.port.in.PostEntryUseCase;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -28,5 +33,18 @@ public class LedgerServiceConfig {
     public AccountBalanceQueryService accountBalanceQueryService(
             AccountBalancePort accountBalancePort) {
         return new AccountBalanceQueryService(accountBalancePort);
+    }
+
+    @Bean
+    public LedgerGrpcService ledgerGrpcService(
+            PostEntryUseCase postEntryUseCase,
+            CreateAccountBalanceUseCase createAccountBalanceUseCase,
+            GetBalanceUseCase getBalanceUseCase) {
+        return new LedgerGrpcService(postEntryUseCase, createAccountBalanceUseCase, getBalanceUseCase);
+    }
+
+    @Bean
+    public GlobalExceptionInterceptor globalExceptionInterceptor() {
+        return new GlobalExceptionInterceptor();
     }
 }
