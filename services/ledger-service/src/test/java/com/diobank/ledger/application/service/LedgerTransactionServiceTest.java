@@ -52,7 +52,7 @@ class LedgerTransactionServiceTest {
         PostEntryCommand command = new PostEntryCommand(TX_ID, DEBIT_ID, CREDIT_ID, 500L);
         PostEntryResult result = service.postEntry(command);
 
-        assertThat(result.alreadyExisted()).isTrue();
+        assertThat(result.isIdempotentFallback()).isTrue();
         assertThat(result.transactionId()).isEqualTo(TX_ID);
 
         // No account locks or mutations should occur
@@ -75,7 +75,7 @@ class LedgerTransactionServiceTest {
         PostEntryCommand command = new PostEntryCommand(TX_ID, DEBIT_ID, CREDIT_ID, 300L);
         PostEntryResult result = service.postEntry(command);
 
-        assertThat(result.alreadyExisted()).isFalse();
+        assertThat(result.isIdempotentFallback()).isFalse();
         assertThat(result.transactionId()).isEqualTo(TX_ID);
 
         // Balances should be updated for both accounts

@@ -34,6 +34,7 @@ import static org.assertj.core.api.Assertions.*;
 @DisplayName("LedgerTransactionService Integration Tests")
 class LedgerTransactionServiceIntegrationTest {
 
+    @SuppressWarnings("resource")
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withDatabaseName("ledger_test")
@@ -102,7 +103,7 @@ class LedgerTransactionServiceIntegrationTest {
 
         PostEntryResult result = service.postEntry(new PostEntryCommand(txId, alice, bob, 3_000L));
 
-        assertThat(result.alreadyExisted()).isFalse();
+        assertThat(result.isIdempotentFallback()).isFalse();
         assertThat(getBalance(alice)).isEqualTo(7_000L);
         assertThat(getBalance(bob)).isEqualTo(3_000L);
         assertThat(countLedgerEntries(txId)).isEqualTo(2L);
@@ -120,11 +121,11 @@ class LedgerTransactionServiceIntegrationTest {
 
         // First call — should succeed normally
         PostEntryResult first = service.postEntry(command);
-        assertThat(first.alreadyExisted()).isFalse();
+        assertThat(first.isIdempotentFallback()).isFalse();
 
         // Second call — same txId, should short-circuit
         PostEntryResult second = service.postEntry(command);
-        assertThat(second.alreadyExisted()).isTrue();
+        assertThat(second.isIdempotentFallback()).isTrue();
 
         // Balance must remain as after first call only
         assertThat(getBalance(alice)).isEqualTo(7_000L);
@@ -176,7 +177,7 @@ class LedgerTransactionServiceIntegrationTest {
                 .map(f -> {
                     try { return f.get(); } catch (Exception e) { return null; }
                 })
-                .filter(r -> r != null && !r.alreadyExisted())
+                .filter(r -> r != null && !r.isIdempotentFallback())
                 .count();
 
         // Exactly one call must be the "real" one
@@ -195,9 +196,6 @@ class LedgerTransactionServiceIntegrationTest {
     void postEntry_concurrentOpposingTransfers_noDeadlock() throws Exception {
         UUID alice = createAccount(INITIAL_BALANCE);
         UUID bob = createAccount(INITIAL_BALANCE);
-
-        UUID txAtoB = UUID.randomUUID();
-        UUID txBtoA = UUID.randomUUID();
 
         int rounds = 5;
         ExecutorService executor = Executors.newFixedThreadPool(2);

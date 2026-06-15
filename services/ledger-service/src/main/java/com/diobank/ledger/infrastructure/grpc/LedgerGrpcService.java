@@ -41,7 +41,7 @@ public class LedgerGrpcService extends LedgerServiceGrpc.LedgerServiceImplBase {
 
         PostTransactionResponse response = PostTransactionResponse.newBuilder()
                 .setSuccess(true)
-                .setMessage(result.alreadyExisted() ? "Transaction already processed" : "Transaction successful")
+                .setMessage(result.isIdempotentFallback() ? "Transaction already processed" : "Transaction successful")
                 .build();
 
         responseObserver.onNext(response);

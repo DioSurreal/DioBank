@@ -64,14 +64,17 @@ public class LedgerTransactionService implements PostEntryUseCase {
             secondLock = command.debitAccountId();
         }
 
-        // 5. Acquire Locks using SELECT FOR UPDATE
-        AccountBalance firstAccount = accountBalancePort.loadForUpdate(firstLock)
-                .orElseThrow(() -> new AccountNotFoundException(firstLock));
-        AccountBalance secondAccount = accountBalancePort.loadForUpdate(secondLock)
-                .orElseThrow(() -> new AccountNotFoundException(secondLock));
+        final UUID finalFirstLock = firstLock;
+        final UUID finalSecondLock = secondLock;
 
-        AccountBalance debitAccount = firstLock.equals(command.debitAccountId()) ? firstAccount : secondAccount;
-        AccountBalance creditAccount = secondLock.equals(command.creditAccountId()) ? secondAccount : firstAccount;
+        // 5. Acquire Locks using SELECT FOR UPDATE
+        AccountBalance firstAccount = accountBalancePort.loadForUpdate(finalFirstLock)
+                .orElseThrow(() -> new AccountNotFoundException(finalFirstLock));
+        AccountBalance secondAccount = accountBalancePort.loadForUpdate(finalSecondLock)
+                .orElseThrow(() -> new AccountNotFoundException(finalSecondLock));
+
+        AccountBalance debitAccount = finalFirstLock.equals(command.debitAccountId()) ? firstAccount : secondAccount;
+        AccountBalance creditAccount = finalSecondLock.equals(command.creditAccountId()) ? secondAccount : firstAccount;
 
         // 6. Mutate Balances (Validates Sufficient Funds Internally)
         debitAccount.deduct(amountToTransfer);

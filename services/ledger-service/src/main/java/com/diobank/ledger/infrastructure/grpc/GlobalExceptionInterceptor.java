@@ -4,6 +4,7 @@ import com.diobank.ledger.application.exception.AccountNotFoundException;
 import com.diobank.ledger.domain.exception.InsufficientBalanceException;
 import com.diobank.ledger.domain.exception.InvalidPostingException;
 import io.grpc.*;
+import io.grpc.ForwardingServerCallListener.SimpleForwardingServerCallListener;
 
 public class GlobalExceptionInterceptor implements ServerInterceptor {
 
