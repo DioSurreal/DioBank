@@ -327,7 +327,6 @@ Account metadata only:
 * customer_id
 * account_status
 * account_type
-* account_name
 
 Account Service does not own balances.
 

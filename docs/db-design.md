@@ -10,7 +10,7 @@ TODO: Document the logical and physical database design for each service.
 DB design V3
 
 customer :
-		customer_id : BIGSERIAL PK
+		customer_id : VARCHAR PK (UUID)
 		name : VARCHAR  NOT NULL
 		surname : VARCHAR NOT NULL
 		status : VARCHAR NOT NULL
@@ -24,7 +24,7 @@ customer :
 		updated_at TIMESTAMP NOT NULL
 customer_log_history :
 		customer_log_id : BIGSERIAL PK
-		customer_id : BIGSERIAL FK
+		customer_id : VARCHAR PK (UUID)
 		actor_type VARCHAR NOT NULL,( 'CUSTOMER', 'STAFF', 'SYSTEM')
 		channel : VARCHAR NOT NULL
 		details JSONB NOT NULL
@@ -47,17 +47,15 @@ kyc_log_history :
 		created_at TIMESTAMP NOT NULL
 account :
 		account_id : VARCHAR PK (UUID)
-		customer_id : BIGSERIAL  NOT NULL
+		customer_id : VARCHAR (UUID)  NOT NULL
 		account_number : VARCHAR NOT NULL
-		account_name : VARCHAR NOT NULL
 		status : VARCHAR NOT NULL
 		created_at : TIMESTAMP NOT NULL
 		updated_at : TIMESTAMP NOT NULL
 account_log_history : # i will detect for never change balance by any way 
 		account_log_id : BIGSERIAL PK
 		account_id : VARCHAR FK
-		actor_type VARCHAR NOT NULL,( 'CUSTOMER', 'STAFF', 'SYSTEM')
-		channel : VARCHAR NOT NULL
+		topic :  VARCHAR NOT NULL
 		details : JSONB NOT NULL
 		created_at TIMESTAMP NOT NULL
 money_transactions :
